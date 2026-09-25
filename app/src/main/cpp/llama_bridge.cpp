@@ -4,6 +4,13 @@
 // commit CI fetches has renamed any symbol used below, this file needs a
 // small update to match. It has not been exercised against a live model on
 // device as part of this change.
+//
+// NOTE: as of late 2024/2025, llama.cpp moved tokenize / vocab-size /
+// eog-check / token-to-piece off llama_model* onto a dedicated
+// llama_vocab* type (obtained via llama_model_get_vocab). This file uses
+// the current (non-deprecated) API: llama_model_load_from_file,
+// llama_init_from_model, llama_model_free, and the vocab-based token
+// functions below.
 
 #include <jni.h>
 #include <string>
@@ -19,6 +26,7 @@
 
 struct EngineHandle {
     llama_model* model = nullptr;
+    const llama_vocab* vocab = nullptr;
     llama_context* ctx = nullptr;
     std::atomic<bool> stop_requested{false};
 };
@@ -31,7 +39,7 @@ Java_com_myai_assistant_inference_LlamaEngine_nativeLoadModel(
     llama_backend_init();
 
     llama_model_params model_params = llama_model_default_params();
-    llama_model* model = llama_load_model_from_file(path, model_params);
+    llama_model* model = llama_model_load_from_file(path, model_params);
     env->ReleaseStringUTFChars(modelPath, path);
 
     if (!model) {
@@ -39,20 +47,23 @@ Java_com_myai_assistant_inference_LlamaEngine_nativeLoadModel(
         return 0;
     }
 
+    const llama_vocab* vocab = llama_model_get_vocab(model);
+
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = contextLength;
     ctx_params.n_threads = nThreads;
     ctx_params.n_threads_batch = nThreads;
 
-    llama_context* ctx = llama_new_context_with_model(model, ctx_params);
+    llama_context* ctx = llama_init_from_model(model, ctx_params);
     if (!ctx) {
         LOGE("Failed to create context");
-        llama_free_model(model);
+        llama_model_free(model);
         return 0;
     }
 
     auto* handle = new EngineHandle();
     handle->model = model;
+    handle->vocab = vocab;
     handle->ctx = ctx;
     return reinterpret_cast<jlong>(handle);
 }
@@ -63,7 +74,7 @@ Java_com_myai_assistant_inference_LlamaEngine_nativeFreeModel(
     auto* handle = reinterpret_cast<EngineHandle*>(handlePtr);
     if (!handle) return;
     if (handle->ctx) llama_free(handle->ctx);
-    if (handle->model) llama_free_model(handle->model);
+    if (handle->model) llama_model_free(handle->model);
     delete handle;
 }
 
@@ -78,7 +89,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_myai_assistant_inference_LlamaEngine_nativeGenerate(
         JNIEnv* env, jobject /*thiz*/, jlong handlePtr, jstring prompt, jint maxTokens, jobject callback) {
     auto* handle = reinterpret_cast<EngineHandle*>(handlePtr);
-    if (!handle || !handle->ctx) return;
+    if (!handle || !handle->ctx || !handle->vocab) return;
     handle->stop_requested = false;
 
     const char* promptChars = env->GetStringUTFChars(prompt, nullptr);
@@ -88,9 +99,9 @@ Java_com_myai_assistant_inference_LlamaEngine_nativeGenerate(
     jclass callbackClass = env->GetObjectClass(callback);
     jmethodID onTokenMethod = env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)Z");
 
-    const llama_model* model = handle->model;
+    const llama_vocab* vocab = handle->vocab;
     std::vector<llama_token> tokens(promptStr.size() + 8);
-    int nTokens = llama_tokenize(model, promptStr.c_str(), (int32_t) promptStr.size(),
+    int nTokens = llama_tokenize(vocab, promptStr.c_str(), (int32_t) promptStr.size(),
                                   tokens.data(), (int32_t) tokens.size(), true, true);
     tokens.resize(std::max(nTokens, 0));
 
@@ -99,7 +110,7 @@ Java_com_myai_assistant_inference_LlamaEngine_nativeGenerate(
         return;
     }
 
-    int nVocab = llama_n_vocab(model);
+    int nVocab = llama_vocab_n_tokens(vocab);
     for (int i = 0; i < maxTokens && !handle->stop_requested; ++i) {
         float* logits = llama_get_logits(handle->ctx);
 
@@ -114,10 +125,10 @@ Java_com_myai_assistant_inference_LlamaEngine_nativeGenerate(
             }
         }
 
-        if (llama_token_is_eog(model, bestToken)) break;
+        if (llama_vocab_is_eog(vocab, bestToken)) break;
 
         char buf[256];
-        int len = llama_token_to_piece(model, bestToken, buf, sizeof(buf), 0, true);
+        int len = llama_token_to_piece(vocab, bestToken, buf, sizeof(buf), 0, true);
         std::string piece(buf, std::max(len, 0));
 
         jstring jpiece = env->NewStringUTF(piece.c_str());
