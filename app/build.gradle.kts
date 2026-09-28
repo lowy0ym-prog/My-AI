@@ -18,7 +18,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            // 64-bit ARM only: covers all modern Samsung/Android phones, and
+            // llama.cpp's 32-bit ARM (armeabi-v7a) path fails to compile
+            // (missing NEON float16 intrinsics).
+            abiFilters += listOf("arm64-v8a")
         }
 
         externalNativeBuild {
