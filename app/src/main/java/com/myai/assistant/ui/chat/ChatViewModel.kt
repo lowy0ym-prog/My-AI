@@ -7,7 +7,7 @@ import com.myai.assistant.MyAiApplication
 import com.myai.assistant.data.db.MessageEntity
 import com.myai.assistant.data.db.MessageRole
 import com.myai.assistant.data.repository.ChatRepository
-import com.myai.assistant.inference.LlamaEngine
+import com.myai.assistant.inference.EngineLoadState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,12 +26,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as MyAiApplication
     private val repository = ChatRepository(app.database.conversationDao(), app.database.messageDao())
-    private val engine = LlamaEngine()
+
+    // Shared with the Models screen via MyAiApplication - whichever model was
+    // last activated there is what chat uses here.
+    private val engineHolder = app.engineHolder
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState
 
     private var generationJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            engineHolder.loadState.collect { state ->
+                _uiState.update { it.copy(modelLoaded = state == EngineLoadState.LOADED) }
+            }
+        }
+    }
 
     fun open(conversationId: Long) {
         _uiState.update { it.copy(conversationId = conversationId) }
@@ -55,11 +66,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.addMessage(state.conversationId, MessageRole.USER, text)
 
-            if (!engine.isLoaded) {
+            if (!engineHolder.engine.isLoaded) {
                 repository.addMessage(
                     state.conversationId,
                     MessageRole.ASSISTANT,
-                    "No local model is loaded yet. Go to Models to download or import a GGUF model first.",
+                    "No local model is loaded yet. Go to Models and tap \"Use\" on a downloaded model first.",
                     isError = true
                 )
                 return@launch
@@ -70,7 +81,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val buffer = StringBuilder()
 
             generationJob = launch {
-                engine.generate(text).collect { token ->
+                engineHolder.engine.generate(text).collect { token ->
                     buffer.append(token)
                     repository.updateMessage(
                         MessageEntity(
@@ -99,8 +110,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        engine.unload()
-    }
+    // NOTE: the engine is app-scoped (via EngineHolder) now, not owned by
+    // this screen, so it is intentionally NOT unloaded when this ViewModel
+    // is cleared - leaving the chat screen shouldn't unload the model.
 }
