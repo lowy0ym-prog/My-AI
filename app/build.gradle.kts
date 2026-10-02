@@ -32,6 +32,27 @@ android {
         }
     }
 
+    signingConfigs {
+        // CI generates this file (see android-build.yml) from the fixed,
+        // non-secret keypair in ci/debug-signing/, by converting those PEMs
+        // to a PKCS12 keystore. Using the same identity on every CI build
+        // means a newer debug APK installs as an UPDATE over the old one
+        // instead of failing with "app not installed" / requiring an
+        // uninstall first. For local Android Studio builds where this file
+        // doesn't exist, Gradle falls back to the normal auto-generated
+        // local debug keystore.
+        val ciDebugKeystore = rootProject.file("ci-debug.keystore.p12")
+        if (ciDebugKeystore.exists()) {
+            create("ciDebug") {
+                storeFile = ciDebugKeystore
+                storePassword = "android"
+                keyAlias = "myai"
+                keyPassword = "android"
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -47,6 +68,7 @@ android {
         debug {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
+            signingConfigs.findByName("ciDebug")?.let { signingConfig = it }
         }
     }
 
