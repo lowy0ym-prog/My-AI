@@ -14,14 +14,14 @@ data class ModelInfo(
 
 /**
  * A small starter catalog of practical open-weight, GGUF-quantized models that
- * run reasonably well on modern Android phones (8GB+ RAM recommended) via
+ * run reasonably well on modern Android phones (6-8GB+ RAM recommended) via
  * llama.cpp. Users can also import their own GGUF file from Models > Import.
  *
- * IMPORTANT: the downloadUrl values below point at the expected Hugging Face
- * GGUF repos for each model family but have not been individually verified
- * as part of this change (no network access was available while building
- * this scaffold). Confirm each URL resolves to a real file before shipping,
- * and swap in a specific verified quantization if the filename differs.
+ * Llama 3.2 and Phi-3.5 point at bartowski's community GGUF re-quantizations
+ * (verified via web search, not gated behind a Hugging Face login) rather
+ * than the original Meta/Microsoft repos, which either gate the download
+ * behind license acceptance or don't publish GGUF files directly. Same
+ * underlying weights, same license terms as the original model either way.
  */
 object ModelCatalog {
     val recommended = ModelInfo(
@@ -41,20 +41,20 @@ object ModelCatalog {
             id = "llama-3.2-3b-instruct-q4_k_m",
             displayName = "Llama 3.2 3B Instruct (Q4_K_M)",
             quantization = "Q4_K_M",
-            approxSizeGb = 2.0,
+            approxSizeGb = 2.02,
             contextLength = 8192,
             minRamGb = 4.0,
-            downloadUrl = "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct-GGUF/resolve/main/llama-3.2-3b-instruct-q4_k_m.gguf",
-            licenseNote = "Llama 3.2 Community License \u2014 requires accepting Meta's terms on Hugging Face."
+            downloadUrl = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+            licenseNote = "Llama 3.2 Community License (community GGUF re-quantization by bartowski; same license terms as Meta's original model)."
         ),
         ModelInfo(
             id = "phi-3.5-mini-instruct-q4_k_m",
             displayName = "Phi-3.5 Mini Instruct (Q4_K_M)",
             quantization = "Q4_K_M",
-            approxSizeGb = 2.2,
+            approxSizeGb = 2.39,
             contextLength = 4096,
             minRamGb = 4.0,
-            downloadUrl = "https://huggingface.co/microsoft/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
             licenseNote = "MIT license."
         )
     )
