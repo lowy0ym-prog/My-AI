@@ -41,6 +41,19 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ggerganov/llama.cpp.git app/src/main/cpp/llama.cpp
 
+      # Build a PKCS12 keystore from the fixed, non-secret debug keypair in
+      # ci/debug-signing/, so every CI build signs with the same identity.
+      # That lets you install a newer debug APK as an UPDATE over the old
+      # one instead of Android refusing with "app not installed". See
+      # ci/debug-signing/README.md and app/build.gradle.kts for details.
+      - name: Generate stable debug keystore
+        run: |
+          openssl pkcs12 -export \
+            -in ci/debug-signing/debug.cert.pem \
+            -inkey ci/debug-signing/debug.key.pem \
+            -out ci-debug.keystore.p12 \
+            -name myai -passout pass:android
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
