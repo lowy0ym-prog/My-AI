@@ -1,0 +1,59 @@
+name: Budgeting AI API Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      question:
+        description: "Question to ask OpenAI (use fictional data only)"
+        required: true
+        type: string
+        default: "Analyze this fictional monthly budget: income $5000, housing $1800, groceries $1000, bills $700, other expenses $900. Calculate total expenses, remaining money, and percentage spent. Suggest two practical savings ideas."
+
+permissions:
+  contents: read
+
+jobs:
+  ask-openai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check that API secret exists
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Missing OPENAI_API_KEY repository secret. No API request was made."
+            exit 1
+          fi
+
+      - name: Send one request to OpenAI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          USER_QUESTION: ${{ inputs.question }}
+        run: |
+          set -euo pipefail
+          payload="$(jq -n --arg question "$USER_QUESTION" '{
+            model: "gpt-4.1-mini",
+            input: [
+              {
+                role: "system",
+                content: "You are a practical budgeting assistant. Use only fictional sample data in this test. Show calculations clearly. Do not request sensitive personal or bank information. Keep the answer concise."
+              },
+              {
+                role: "user",
+                content: $question
+              }
+            ],
+            max_output_tokens: 350
+          }')"
+
+          response="$(curl --fail-with-body --silent --show-error \
+            https://api.openai.com/v1/responses \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$payload")"
+
+          echo "$response" | jq -r '
+            [.output[]?.content[]? | select(.type == "output_text") | .text]
+            | if length > 0 then join("\n") else "No text response returned. Check the workflow logs for the API response." end
+          '
